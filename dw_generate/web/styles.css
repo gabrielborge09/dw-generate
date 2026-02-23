@@ -151,6 +151,10 @@ button.ghost {
   background: var(--accent-2);
 }
 
+button.danger {
+  background: #9f1f1f;
+}
+
 .table-wrap {
   overflow-x: auto;
 }

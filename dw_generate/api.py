@@ -20,6 +20,7 @@ from .flows import run_full_load_flow, run_incremental_load_flow
 from .runtime_log import BRASILIA_TZ, append_runtime_log, read_runtime_logs
 from .scheduler import (
     add_scheduler_job,
+    delete_scheduler_job,
     init_scheduler_store,
     list_scheduler_jobs,
     list_scheduler_runs,
@@ -47,6 +48,7 @@ class JobUpsertRequest(BaseModel):
     interval_unit: Optional[str] = None
     interval_value: Optional[int] = Field(default=None, ge=1)
     daily_at: Optional[str] = None
+    daily_repeat: bool = True
     rows: Optional[int] = Field(default=None, ge=1)
     continue_on_error: bool = False
     skip_validation: bool = False
@@ -533,6 +535,7 @@ def create_app(
             if not payload.daily_at:
                 raise HTTPException(status_code=400, detail="daily_at e obrigatorio para schedule daily.")
             kwargs["daily_at"] = payload.daily_at.strip()
+            kwargs["daily_repeat"] = bool(payload.daily_repeat)
 
         try:
             return add_scheduler_job(**kwargs)
@@ -561,6 +564,13 @@ def create_app(
     def api_job_disable(job_ref: str) -> Dict[str, Any]:
         try:
             return set_scheduler_job_enabled(app_config, job_ref=job_ref, enabled=False)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.delete("/api/jobs/{job_ref}")
+    def api_job_delete(job_ref: str) -> Dict[str, Any]:
+        try:
+            return delete_scheduler_job(app_config, job_ref=job_ref)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 

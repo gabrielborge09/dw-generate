@@ -209,6 +209,12 @@ python -m dw_generate --config config.yaml --env-file .env scheduler-add --name 
 python -m dw_generate --config config.yaml --env-file .env scheduler-add --name full_diario --mode full --daily-at 02:00
 ```
 
+Para daily sem repeticao (executa uma vez e desabilita):
+
+```bash
+python -m dw_generate --config config.yaml --env-file .env scheduler-add --name full_unica --mode full --daily-at 2026-02-23T22:00 --daily-once
+```
+
 4. Listar jobs:
 
 ```bash
@@ -258,10 +264,12 @@ Endpoints principais:
 - `POST /api/scheduler/run-once` - executa jobs vencidos uma vez
 - `POST /api/jobs` - cria/atualiza job (configuracao completa)
   - `daily_at` aceita `HH:MM` ou `YYYY-MM-DDTHH:MM` (BRT)
+  - `daily_repeat`: `true` para repetir diariamente, `false` para executar uma vez
 - `POST /api/execute/full` - forca carga full
 - `POST /api/execute/incremental` - forca carga incremental
 - `GET /api/jobs` - lista jobs
 - `POST /api/jobs/{job}/trigger` - dispara job manualmente
+- `DELETE /api/jobs/{job}` - exclui job e historico associado
 - `GET /api/history` - historico de runs do scheduler e execucoes manuais
 - `GET /api/logs` - logs persistidos de execucao (scheduler + manual)
 

@@ -109,7 +109,7 @@ function renderJobs(jobs) {
       <td>${job.mode}</td>
       <td>${job.schedule_type === "interval"
         ? `${job.interval_seconds}s`
-        : `daily ${job.daily_time} (BRT)`}</td>
+        : `daily ${job.daily_time} (BRT) / ${job.daily_repeat ? "recorrente" : "uma vez"}`}</td>
       <td>${formatDateTimeBrt(job.next_run_at)}</td>
       <td>${job.enabled ? "enabled" : "disabled"} / ${job.last_status || "-"}</td>
       <td></td>
@@ -135,6 +135,13 @@ function renderJobs(jobs) {
     btnEdit.type = "button";
     btnEdit.onclick = () => loadJobIntoForm(job);
     actionsTd.appendChild(btnEdit);
+
+    const btnDelete = document.createElement("button");
+    btnDelete.className = "danger";
+    btnDelete.textContent = "Excluir";
+    btnDelete.type = "button";
+    btnDelete.onclick = () => deleteJob(job);
+    actionsTd.appendChild(btnDelete);
 
     tbody.appendChild(tr);
   }
@@ -266,6 +273,19 @@ async function setJobEnabled(jobRef, enabled) {
   await refreshJobs();
 }
 
+async function deleteJob(job) {
+  const answer = window.confirm(`Excluir a job "${job.name}" (id=${job.id})?`);
+  if (!answer) {
+    return;
+  }
+  const result = await apiFetch(`/api/jobs/${job.id}`, { method: "DELETE" });
+  log(`Job ${job.id} excluida`, result);
+  if (document.getElementById("job-name").value.trim() === job.name) {
+    clearJobForm();
+  }
+  await Promise.all([refreshJobs(), refreshHistory(), refreshStatus(), refreshExecutionLogs()]);
+}
+
 function syncJobScheduleFields() {
   const scheduleType = document.getElementById("job-schedule-type").value;
   const intervalBlock = document.getElementById("job-interval-fields");
@@ -273,6 +293,7 @@ function syncJobScheduleFields() {
   const intervalValue = document.getElementById("job-interval-value");
   const intervalUnit = document.getElementById("job-interval-unit");
   const dailyAt = document.getElementById("job-daily-at");
+  const dailyRepeat = document.getElementById("job-daily-repeat");
 
   if (scheduleType === "interval") {
     intervalBlock.classList.remove("hidden");
@@ -280,6 +301,7 @@ function syncJobScheduleFields() {
     intervalValue.disabled = false;
     intervalUnit.disabled = false;
     dailyAt.disabled = true;
+    dailyRepeat.disabled = true;
     return;
   }
 
@@ -288,6 +310,7 @@ function syncJobScheduleFields() {
   intervalValue.disabled = true;
   intervalUnit.disabled = true;
   dailyAt.disabled = false;
+  dailyRepeat.disabled = false;
   if (!dailyAt.value) {
     dailyAt.value = defaultDailyDatetimeBrt();
   }
@@ -300,6 +323,7 @@ function clearJobForm() {
   document.getElementById("job-interval-value").value = "30";
   document.getElementById("job-interval-unit").value = "minutes";
   document.getElementById("job-daily-at").value = "";
+  document.getElementById("job-daily-repeat").checked = true;
   document.getElementById("job-rows").value = "";
   document.getElementById("job-continue-on-error").checked = false;
   document.getElementById("job-skip-validation").checked = false;
@@ -321,8 +345,10 @@ function loadJobIntoForm(job) {
   if (job.schedule_type === "daily") {
     document.getElementById("job-schedule-type").value = "daily";
     document.getElementById("job-daily-at").value = isoToDatetimeLocalBrt(job.next_run_at);
+    document.getElementById("job-daily-repeat").checked = Boolean(job.daily_repeat);
   } else {
     document.getElementById("job-schedule-type").value = "interval";
+    document.getElementById("job-daily-repeat").checked = true;
     const intervalSeconds = Number(job.interval_seconds || 1800);
     if (intervalSeconds % 3600 === 0) {
       document.getElementById("job-interval-unit").value = "hours";
@@ -371,12 +397,14 @@ function readJobPayload() {
     }
     payload.interval_unit = document.getElementById("job-interval-unit").value;
     payload.interval_value = intervalValue;
+    payload.daily_repeat = true;
   } else {
     const dailyAt = document.getElementById("job-daily-at").value;
     if (!dailyAt) {
       throw new Error("Data/hora inicial (BRT) e obrigatoria para agenda daily.");
     }
     payload.daily_at = dailyAt;
+    payload.daily_repeat = document.getElementById("job-daily-repeat").checked;
   }
 
   return payload;

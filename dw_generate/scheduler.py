@@ -29,6 +29,7 @@ def init_scheduler_store(config: AppConfig) -> Dict[str, str]:
                 schedule_type TEXT NOT NULL CHECK (schedule_type IN ('interval', 'daily')),
                 interval_seconds INTEGER,
                 daily_time TEXT,
+                daily_repeat INTEGER NOT NULL DEFAULT 1,
                 rows_override INTEGER,
                 continue_on_error INTEGER NOT NULL DEFAULT 0,
                 skip_validation INTEGER NOT NULL DEFAULT 0,
@@ -59,6 +60,7 @@ def init_scheduler_store(config: AppConfig) -> Dict[str, str]:
             ON scheduler_runs(job_id, started_at DESC);
             """
         )
+        _ensure_scheduler_schema(conn)
         conn.commit()
     return {"scheduler_db": str(db_path)}
 
@@ -71,6 +73,7 @@ def add_scheduler_job(
     every_minutes: Optional[int] = None,
     every_hours: Optional[int] = None,
     daily_at: Optional[str] = None,
+    daily_repeat: bool = True,
     rows_override: Optional[int] = None,
     continue_on_error: bool = False,
     skip_validation: bool = False,
@@ -86,6 +89,7 @@ def add_scheduler_job(
         every_hours=every_hours,
         daily_at=daily_at,
     )
+    effective_daily_repeat = bool(daily_repeat) if schedule_type == "daily" else True
 
     now = _utcnow()
     if daily_first_run_at is not None:
@@ -119,6 +123,7 @@ def add_scheduler_job(
             schedule_type,
             interval_seconds,
             normalized_daily_at,
+            int(effective_daily_repeat),
             rows_override,
             int(continue_on_error),
             int(skip_validation),
@@ -137,6 +142,7 @@ def add_scheduler_job(
                     schedule_type = ?,
                     interval_seconds = ?,
                     daily_time = ?,
+                    daily_repeat = ?,
                     rows_override = ?,
                     continue_on_error = ?,
                     skip_validation = ?,
@@ -150,6 +156,7 @@ def add_scheduler_job(
                     schedule_type,
                     interval_seconds,
                     normalized_daily_at,
+                    int(effective_daily_repeat),
                     rows_override,
                     int(continue_on_error),
                     int(skip_validation),
@@ -169,6 +176,7 @@ def add_scheduler_job(
                     schedule_type,
                     interval_seconds,
                     daily_time,
+                    daily_repeat,
                     rows_override,
                     continue_on_error,
                     skip_validation,
@@ -177,7 +185,7 @@ def add_scheduler_job(
                     created_at,
                     updated_at,
                     name
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 params,
             )
@@ -256,6 +264,30 @@ def trigger_scheduler_job(config: AppConfig, job_ref: str) -> Dict[str, object]:
         execution = _execute_job(conn, config, row)
         conn.commit()
     return {"triggered": execution}
+
+
+def delete_scheduler_job(config: AppConfig, job_ref: str) -> Dict[str, object]:
+    init_scheduler_store(config)
+    db_path = _scheduler_db_path(config)
+    with _connect_scheduler(db_path) as conn:
+        row = _find_job_by_ref(conn, job_ref)
+        if row is None:
+            raise ValueError(f"Job nao encontrado: {job_ref}")
+
+        job_id = int(row["id"])
+        job_name = str(row["name"])
+
+        conn.execute(
+            "DELETE FROM scheduler_runs WHERE job_id = ?",
+            (job_id,),
+        )
+        conn.execute(
+            "DELETE FROM scheduler_jobs WHERE id = ?",
+            (job_id,),
+        )
+        conn.commit()
+
+    return {"deleted": {"id": job_id, "name": job_name}}
 
 
 def run_due_jobs_once(config: AppConfig, max_jobs: Optional[int] = None) -> Dict[str, object]:
@@ -383,6 +415,7 @@ def _execute_job(conn: sqlite3.Connection, config: AppConfig, job_row: sqlite3.R
     rows_override = job_row["rows_override"]
     continue_on_error = _as_bool(job_row["continue_on_error"])
     skip_validation = _as_bool(job_row["skip_validation"])
+    daily_repeat = _as_bool(_row_get(job_row, "daily_repeat", 1))
 
     status = "success"
     error_text = ""
@@ -413,12 +446,18 @@ def _execute_job(conn: sqlite3.Connection, config: AppConfig, job_row: sqlite3.R
         result_payload = {"exception": str(exc)}
 
     finished_at = _utcnow()
-    next_run = _compute_next_run(
-        schedule_type=job_row["schedule_type"],
-        interval_seconds=job_row["interval_seconds"],
-        daily_time=job_row["daily_time"],
-        reference=finished_at,
-    )
+    schedule_type = str(job_row["schedule_type"]).lower()
+    enabled_after = int(job_row["enabled"])
+    if schedule_type == "daily" and not daily_repeat:
+        next_run = finished_at
+        enabled_after = 0
+    else:
+        next_run = _compute_next_run(
+            schedule_type=job_row["schedule_type"],
+            interval_seconds=job_row["interval_seconds"],
+            daily_time=job_row["daily_time"],
+            reference=finished_at,
+        )
 
     conn.execute(
         """
@@ -445,6 +484,7 @@ def _execute_job(conn: sqlite3.Connection, config: AppConfig, job_row: sqlite3.R
             last_status = ?,
             last_error = ?,
             next_run_at = ?,
+            enabled = ?,
             updated_at = ?
         WHERE id = ?
         """,
@@ -453,6 +493,7 @@ def _execute_job(conn: sqlite3.Connection, config: AppConfig, job_row: sqlite3.R
             status,
             error_text or None,
             _to_iso(next_run),
+            enabled_after,
             _to_iso(finished_at),
             job_row["id"],
         ),
@@ -468,6 +509,8 @@ def _execute_job(conn: sqlite3.Connection, config: AppConfig, job_row: sqlite3.R
         "status": status,
         "error_text": error_text or None,
         "next_run_at": _to_iso(next_run),
+        "daily_repeat": daily_repeat,
+        "enabled_after_run": bool(enabled_after),
     }
     try:
         append_runtime_log(
@@ -626,6 +669,7 @@ def _serialize_job(row: sqlite3.Row) -> Dict[str, object]:
         "schedule_type": row["schedule_type"],
         "interval_seconds": row["interval_seconds"],
         "daily_time": row["daily_time"],
+        "daily_repeat": _as_bool(_row_get(row, "daily_repeat", 1)),
         "rows_override": row["rows_override"],
         "continue_on_error": _as_bool(row["continue_on_error"]),
         "skip_validation": _as_bool(row["skip_validation"]),
@@ -643,9 +687,29 @@ def _as_bool(value: Any) -> bool:
     return bool(int(value))
 
 
+def _row_get(row: sqlite3.Row, key: str, default: Any = None) -> Any:
+    keys = set(row.keys())
+    if key in keys:
+        return row[key]
+    return default
+
+
 def _utcnow() -> datetime:
     return datetime.now(tz=timezone.utc).replace(microsecond=0)
 
 
 def _to_iso(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _ensure_scheduler_schema(conn: sqlite3.Connection) -> None:
+    columns = _table_columns(conn, "scheduler_jobs")
+    if "daily_repeat" not in columns:
+        conn.execute(
+            "ALTER TABLE scheduler_jobs ADD COLUMN daily_repeat INTEGER NOT NULL DEFAULT 1"
+        )
+
+
+def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {str(row[1]) for row in rows}

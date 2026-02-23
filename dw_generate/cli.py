@@ -179,6 +179,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Atualiza o job se nome ja existir.",
     )
+    scheduler_add_cmd.add_argument(
+        "--daily-once",
+        action="store_true",
+        help="Para agenda daily, executa uma vez e desabilita a job (sem repeticao diaria).",
+    )
 
     scheduler_list_cmd = subparsers.add_parser(
         "scheduler-list",
@@ -437,6 +442,7 @@ def main() -> None:
             every_minutes=args.every_minutes,
             every_hours=args.every_hours,
             daily_at=args.daily_at,
+            daily_repeat=not args.daily_once,
             rows_override=args.rows,
             continue_on_error=args.continue_on_error,
             skip_validation=args.skip_validation,
