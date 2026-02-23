@@ -65,7 +65,7 @@ dw-generate/
 
 ## Data Generation
 
-The data generation script uses Mockaroo to create synthetic data for the database.
+O script de geração de dados utiliza o Mockaroo para criar dados sintéticos para o banco de dados.
 
 Observacao:
 - para ambiente de teste, use um script externo de geracao de massa e carregue os dados na base origem.
@@ -80,7 +80,7 @@ Observacao:
 
 ## Data Warehouse
 
-Explication: the star schema includes dimensions and fact table based on the business grain defined in your SQL scripts.
+Explicação: o esquema em estrela inclui dimensões e tabelas de fatos com base no nível de detalhamento do negócio definido em seus scripts SQL.
 
 Modelo de referencia (exemplo):
 - `dim_cliente`
