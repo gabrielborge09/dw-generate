@@ -1,0 +1,38 @@
+source:
+  url: "${DW_SOURCE_URL}"
+  admin_url: "${DW_SOURCE_ADMIN_URL}"
+  schemas: ["${DW_SOURCE_SCHEMA}"]
+
+target:
+  admin_url: "${DW_TARGET_ADMIN_URL}"
+  layers:
+    stage: "${DW_STAGE_DB}"
+    warehouse: "${DW_WAREHOUSE_DB}"
+    gold: "${DW_GOLD_DB}"
+
+workspace_dir: "${DW_WORKSPACE_DIR}"
+sample_rows: "${DW_SAMPLE_ROWS}"
+
+normalization:
+  enabled: true
+  require_create_table: true
+  require_insert_select: true
+  require_explicit_alias: true
+  forbid_select_star: true
+  forbid_destructive_commands: true
+  alias_regex: "^[a-z][a-z0-9_]*$"
+  min_normalized_columns_per_select: 1
+  passthrough_aliases: ["id", "dt_carga", "dt_insercao"]
+  required_functions_any:
+    - "NULLIF"
+    - "LTRIM"
+    - "RTRIM"
+    - "TRY_CONVERT"
+    - "TRY_CAST"
+    - "CAST"
+    - "CONVERT"
+    - "COALESCE"
+    - "UPPER"
+    - "LOWER"
+    - "REPLACE"
+    - "TRANSLATE"
