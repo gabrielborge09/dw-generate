@@ -36,3 +36,11 @@ normalization:
     - "LOWER"
     - "REPLACE"
     - "TRANSLATE"
+
+scheduler:
+  db_path: "workspace/runtime/scheduler.db"
+  poll_interval_seconds: 30
+
+api:
+  host: "127.0.0.1"
+  port: 8000

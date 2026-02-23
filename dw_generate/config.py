@@ -53,12 +53,26 @@ class NormalizationConfig:
 
 
 @dataclass
+class SchedulerConfig:
+    db_path: Optional[str] = None
+    poll_interval_seconds: int = 30
+
+
+@dataclass
+class ApiConfig:
+    host: str = "127.0.0.1"
+    port: int = 8000
+
+
+@dataclass
 class AppConfig:
     source: SourceConfig
     target: TargetConfig
     workspace_dir: Path
     sample_rows: int = 3
     normalization: NormalizationConfig = field(default_factory=NormalizationConfig)
+    scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
+    api: ApiConfig = field(default_factory=ApiConfig)
 
 
 def _validate_layers(layers: Dict[str, str]) -> Dict[str, str]:
@@ -85,6 +99,8 @@ def load_config(path: str | Path, dotenv_path: str | Path | None = ".env") -> Ap
     source_raw = raw.get("source") or {}
     target_raw = raw.get("target") or {}
     normalization_raw = raw.get("normalization") or {}
+    scheduler_raw = raw.get("scheduler") or {}
+    api_raw = raw.get("api") or {}
 
     source = SourceConfig(
         url=source_raw["url"],
@@ -116,6 +132,14 @@ def load_config(path: str | Path, dotenv_path: str | Path | None = ".env") -> Ap
         required_functions_any=list(normalization_raw.get("required_functions_any", []))
         or NormalizationConfig().required_functions_any,
     )
+    scheduler = SchedulerConfig(
+        db_path=scheduler_raw.get("db_path"),
+        poll_interval_seconds=int(scheduler_raw.get("poll_interval_seconds", 30)),
+    )
+    api = ApiConfig(
+        host=str(api_raw.get("host", "127.0.0.1")),
+        port=int(api_raw.get("port", 8000)),
+    )
 
     return AppConfig(
         source=source,
@@ -123,6 +147,8 @@ def load_config(path: str | Path, dotenv_path: str | Path | None = ".env") -> Ap
         workspace_dir=workspace_dir,
         sample_rows=sample_rows,
         normalization=normalization,
+        scheduler=scheduler,
+        api=api,
     )
 
 

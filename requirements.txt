@@ -3,3 +3,5 @@ PyYAML>=6.0.0
 sqlparse>=0.5.0
 pyodbc>=5.0.0
 python-dotenv>=1.0.0
+fastapi>=0.111.0
+uvicorn>=0.30.0

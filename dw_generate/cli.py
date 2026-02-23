@@ -9,6 +9,16 @@ from .discovery import ensure_sql_output_folders, snapshot_source_tables
 from .executor import apply_sql_scripts
 from .flows import run_full_load_flow, run_incremental_load_flow
 from .layers import ensure_layer_databases
+from .scheduler import (
+    add_scheduler_job,
+    init_scheduler_store,
+    list_scheduler_jobs,
+    list_scheduler_runs,
+    run_due_jobs_once,
+    set_scheduler_job_enabled,
+    start_scheduler_loop,
+    trigger_scheduler_job,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -112,6 +122,153 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Cria um config.yaml inicial a partir do template se ainda nao existir.",
     )
 
+    subparsers.add_parser(
+        "scheduler-init",
+        help="Inicializa o banco SQLite do scheduler.",
+    )
+
+    scheduler_add_cmd = subparsers.add_parser(
+        "scheduler-add",
+        help="Cria ou atualiza um job de agendamento para run-full ou run-incremental.",
+    )
+    scheduler_add_cmd.add_argument("--name", required=True, help="Nome unico do job.")
+    scheduler_add_cmd.add_argument(
+        "--mode",
+        required=True,
+        choices=["full", "incremental"],
+        help="Tipo de carga executada pelo job.",
+    )
+    schedule_group = scheduler_add_cmd.add_mutually_exclusive_group(required=True)
+    schedule_group.add_argument(
+        "--every-minutes",
+        type=int,
+        help="Executa em intervalo fixo de minutos.",
+    )
+    schedule_group.add_argument(
+        "--every-hours",
+        type=int,
+        help="Executa em intervalo fixo de horas.",
+    )
+    schedule_group.add_argument(
+        "--daily-at",
+        help="Executa diariamente em HH:MM (BRT) ou inicia em YYYY-MM-DDTHH:MM (BRT).",
+    )
+    scheduler_add_cmd.add_argument(
+        "--rows",
+        type=int,
+        default=None,
+        help="Rows para snapshot quando mode=full (opcional).",
+    )
+    scheduler_add_cmd.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        help="Continua em caso de erro durante apply.",
+    )
+    scheduler_add_cmd.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="Pula validacao de normalizacao durante apply.",
+    )
+    scheduler_add_cmd.add_argument(
+        "--disabled",
+        action="store_true",
+        help="Cria job desabilitado.",
+    )
+    scheduler_add_cmd.add_argument(
+        "--replace",
+        action="store_true",
+        help="Atualiza o job se nome ja existir.",
+    )
+
+    scheduler_list_cmd = subparsers.add_parser(
+        "scheduler-list",
+        help="Lista jobs do scheduler.",
+    )
+    scheduler_list_cmd.add_argument(
+        "--only-enabled",
+        action="store_true",
+        help="Mostra apenas jobs habilitados.",
+    )
+
+    scheduler_enable_cmd = subparsers.add_parser(
+        "scheduler-enable",
+        help="Habilita um job por nome ou id.",
+    )
+    scheduler_enable_cmd.add_argument("job", help="Nome ou id do job.")
+
+    scheduler_disable_cmd = subparsers.add_parser(
+        "scheduler-disable",
+        help="Desabilita um job por nome ou id.",
+    )
+    scheduler_disable_cmd.add_argument("job", help="Nome ou id do job.")
+
+    scheduler_trigger_cmd = subparsers.add_parser(
+        "scheduler-trigger",
+        help="Executa um job imediatamente por nome ou id.",
+    )
+    scheduler_trigger_cmd.add_argument("job", help="Nome ou id do job.")
+
+    scheduler_run_once_cmd = subparsers.add_parser(
+        "scheduler-run-once",
+        help="Roda um ciclo do scheduler e executa jobs vencidos.",
+    )
+    scheduler_run_once_cmd.add_argument(
+        "--max-jobs",
+        type=int,
+        default=None,
+        help="Limita quantidade de jobs executados no ciclo.",
+    )
+
+    scheduler_start_cmd = subparsers.add_parser(
+        "scheduler-start",
+        help="Inicia loop continuo de agendamento e execucao.",
+    )
+    scheduler_start_cmd.add_argument(
+        "--poll-seconds",
+        type=int,
+        default=None,
+        help="Intervalo entre ciclos (default vem do config).",
+    )
+    scheduler_start_cmd.add_argument(
+        "--max-cycles",
+        type=int,
+        default=None,
+        help="Limita ciclos (util para teste).",
+    )
+    scheduler_start_cmd.add_argument(
+        "--max-jobs-per-cycle",
+        type=int,
+        default=None,
+        help="Limita jobs por ciclo.",
+    )
+
+    scheduler_runs_cmd = subparsers.add_parser(
+        "scheduler-runs",
+        help="Lista historico de execucoes do scheduler.",
+    )
+    scheduler_runs_cmd.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Quantidade maxima de execucoes retornadas.",
+    )
+
+    api_serve_cmd = subparsers.add_parser(
+        "api-serve",
+        help="Inicia API HTTP de controle (scheduler + execucao + front).",
+    )
+    api_serve_cmd.add_argument(
+        "--host",
+        default=None,
+        help="Host de bind da API. Se omitido, usa api.host do config.",
+    )
+    api_serve_cmd.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Porta da API. Se omitido, usa api.port do config.",
+    )
+
     return parser
 
 
@@ -157,6 +314,14 @@ normalization:
     - "LOWER"
     - "REPLACE"
     - "TRANSLATE"
+
+scheduler:
+  db_path: "workspace/runtime/scheduler.db"
+  poll_interval_seconds: 30
+
+api:
+  host: "127.0.0.1"
+  port: 8000
 """
     path.write_text(template, encoding="utf-8")
     return f"Arquivo criado: {path}"
@@ -257,6 +422,79 @@ def main() -> None:
             stop_on_error=not args.continue_on_error,
         )
         print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    if args.command == "scheduler-init":
+        result = init_scheduler_store(config)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    if args.command == "scheduler-add":
+        result = add_scheduler_job(
+            config=config,
+            name=args.name,
+            mode=args.mode,
+            every_minutes=args.every_minutes,
+            every_hours=args.every_hours,
+            daily_at=args.daily_at,
+            rows_override=args.rows,
+            continue_on_error=args.continue_on_error,
+            skip_validation=args.skip_validation,
+            enabled=not args.disabled,
+            replace=args.replace,
+        )
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    if args.command == "scheduler-list":
+        result = list_scheduler_jobs(config, include_disabled=not args.only_enabled)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    if args.command == "scheduler-enable":
+        result = set_scheduler_job_enabled(config, job_ref=args.job, enabled=True)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    if args.command == "scheduler-disable":
+        result = set_scheduler_job_enabled(config, job_ref=args.job, enabled=False)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    if args.command == "scheduler-trigger":
+        result = trigger_scheduler_job(config, job_ref=args.job)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    if args.command == "scheduler-run-once":
+        result = run_due_jobs_once(config, max_jobs=args.max_jobs)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    if args.command == "scheduler-start":
+        result = start_scheduler_loop(
+            config=config,
+            poll_interval_seconds=args.poll_seconds,
+            max_cycles=args.max_cycles,
+            max_jobs_per_cycle=args.max_jobs_per_cycle,
+        )
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    if args.command == "scheduler-runs":
+        result = list_scheduler_runs(config, limit=args.limit)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    if args.command == "api-serve":
+        from .api import run_api_server
+
+        run_api_server(
+            config_path=config_path,
+            env_file=env_file_path,
+            host=args.host,
+            port=args.port,
+        )
         return
 
     parser.error(f"Comando nao suportado: {args.command}")

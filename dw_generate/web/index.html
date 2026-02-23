@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DW Generate Control</title>
+  <link rel="stylesheet" href="/web/styles.css">
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <h1>DW Generate Control</h1>
+      <p>Operacao centralizada para scheduler e cargas full/incremental.</p>
+      <div class="status-pill" id="server-time">Carregando...</div>
+    </header>
+
+    <section class="card" id="job-form-card">
+      <h2>Cadastro de Job</h2>
+      <div class="inline-grid">
+        <label>
+          Nome
+          <input type="text" id="job-name" placeholder="ex: incr_clientes_30m">
+        </label>
+        <label>
+          Modo
+          <select id="job-mode">
+            <option value="incremental">incremental</option>
+            <option value="full">full</option>
+          </select>
+        </label>
+        <label>
+          Tipo de agenda
+          <select id="job-schedule-type">
+            <option value="interval">interval</option>
+            <option value="daily">daily</option>
+          </select>
+        </label>
+      </div>
+      <div class="inline-grid" id="job-interval-fields">
+        <label>
+          Intervalo
+          <input type="number" id="job-interval-value" min="1" value="30">
+        </label>
+        <label>
+          Unidade
+          <select id="job-interval-unit">
+            <option value="minutes">minutes</option>
+            <option value="hours">hours</option>
+          </select>
+        </label>
+      </div>
+      <div class="inline-grid hidden" id="job-daily-fields">
+        <label>
+          Data e hora inicial (BRT)
+          <input type="datetime-local" id="job-daily-at" step="60">
+        </label>
+      </div>
+      <div class="inline-grid">
+        <label>
+          Rows (somente full)
+          <input type="number" id="job-rows" min="1" placeholder="opcional">
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="job-continue-on-error">
+          Continue on error
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="job-skip-validation">
+          Skip validation
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="job-enabled" checked>
+          Job habilitado
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="job-replace" checked>
+          Atualizar se existir
+        </label>
+      </div>
+      <div class="actions">
+        <button id="btn-save-job" type="button">Salvar Job</button>
+        <button id="btn-clear-job-form" class="ghost" type="button">Limpar Formulario</button>
+      </div>
+      <pre id="job-form-result" class="mono-box"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Scheduler</h2>
+      <div class="inline-grid">
+        <label>
+          Poll (segundos)
+          <input type="number" id="poll-seconds" min="1" placeholder="30">
+        </label>
+        <label>
+          Max jobs por ciclo
+          <input type="number" id="max-jobs-per-cycle" min="1" placeholder="sem limite">
+        </label>
+      </div>
+      <div class="actions">
+        <button id="btn-start-scheduler">Start</button>
+        <button id="btn-stop-scheduler" class="ghost">Stop</button>
+        <button id="btn-run-once" class="ghost">Run Once</button>
+      </div>
+      <pre id="scheduler-state" class="mono-box"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Execucao Forcada</h2>
+      <div class="inline-grid">
+        <label>
+          Rows (somente full)
+          <input type="number" id="forced-rows" min="1" placeholder="padrao do config">
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="forced-continue-on-error">
+          Continue on error
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="forced-skip-validation">
+          Skip validation
+        </label>
+      </div>
+      <div class="actions">
+        <button id="btn-force-full">Forcar Full</button>
+        <button id="btn-force-incremental">Forcar Incremental</button>
+      </div>
+      <pre id="forced-task" class="mono-box"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Jobs</h2>
+      <div class="actions">
+        <button id="btn-refresh-jobs" class="ghost">Atualizar Jobs</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Nome</th>
+              <th>Modo</th>
+              <th>Agenda</th>
+              <th>Proximo Run (BRT)</th>
+              <th>Status</th>
+              <th>Acoes</th>
+            </tr>
+          </thead>
+          <tbody id="jobs-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Historico</h2>
+      <div class="actions">
+        <button id="btn-refresh-history" class="ghost">Atualizar Historico</button>
+      </div>
+      <h3>Scheduler Runs</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Job</th>
+              <th>Inicio (BRT)</th>
+              <th>Fim (BRT)</th>
+              <th>Status</th>
+              <th>Erro</th>
+            </tr>
+          </thead>
+          <tbody id="scheduler-history-body"></tbody>
+        </table>
+      </div>
+      <h3>Execucoes Manuais</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Modo</th>
+              <th>Inicio (BRT)</th>
+              <th>Fim (BRT)</th>
+              <th>Status</th>
+              <th>Erro</th>
+            </tr>
+          </thead>
+          <tbody id="manual-history-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Log</h2>
+      <div class="actions">
+        <button id="btn-refresh-execution-logs" class="ghost" type="button">Atualizar Logs Execucao</button>
+      </div>
+      <h3>Execucao Persistida</h3>
+      <pre id="execution-log-box" class="mono-box"></pre>
+      <h3>Acoes da Interface</h3>
+      <pre id="log-box" class="mono-box"></pre>
+    </section>
+  </main>
+
+  <script src="/web/app.js"></script>
+</body>
+</html>
