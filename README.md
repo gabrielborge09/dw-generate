@@ -38,8 +38,26 @@ Camadas criadas/validadas:
 ```text
 dw-generate/
   dw_generate/
+    core/
+      config.py
+      db.py
+      runtime_log.py
+    etl/
+      discovery.py
+      executor.py
+      flows.py
+      layers.py
+      normalization.py
+    scheduler_modules/
+      service.py
+      store.py
     api.py
+    api_modules/
+      app.py
+      runtime.py
+      schemas.py
     cli.py
+    # wrappers de compatibilidade (import legacy)
     config.py
     discovery.py
     executor.py
@@ -48,6 +66,7 @@ dw-generate/
     normalization.py
     runtime_log.py
     scheduler.py
+    scheduler_store.py
     web/
       index.html
       app.js
@@ -62,6 +81,13 @@ dw-generate/
   .env
   README.md
 ```
+
+Organizacao interna:
+- `core/`: configuracao, utilitarios de banco e logging de runtime.
+- `etl/`: descoberta, validacao e execucao de cargas.
+- `scheduler_modules/`: regras de agendamento e persistencia SQLite.
+- `api_modules/`: runtime da API, schemas e composicao das rotas.
+- wrappers no nivel raiz mantem compatibilidade com imports antigos.
 
 ## Data Generation
 

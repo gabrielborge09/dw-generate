@@ -4,12 +4,12 @@ import argparse
 import json
 from pathlib import Path
 
-from .config import load_config
-from .discovery import ensure_sql_output_folders, snapshot_source_tables
-from .executor import apply_sql_scripts
-from .flows import run_full_load_flow, run_incremental_load_flow
-from .layers import ensure_layer_databases
-from .scheduler import (
+from .core.config import load_config
+from .etl.discovery import ensure_sql_output_folders, snapshot_source_tables
+from .etl.executor import apply_sql_scripts
+from .etl.flows import run_full_load_flow, run_incremental_load_flow
+from .etl.layers import ensure_layer_databases
+from .scheduler_modules.service import (
     add_scheduler_job,
     init_scheduler_store,
     list_scheduler_jobs,
